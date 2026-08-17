@@ -25,6 +25,15 @@ LIVE_POINTS = ",".join([
     "PUB_SITE.EVChargingPW",    # EV charging power (kW) -- may be absent
 ])
 
+# Res_Meter measurement points (whole-house revenue grid meter, a device
+# distinct from the site/inverter). The *KWH registers are lifetime odometer
+# totals; ActivePW is signed live power (negative = importing).
+METER_POINTS = ",".join([
+    "METER.ActivePW",         # live power (kW)
+    "METER.APConsumedKWH",    # lifetime imported energy register (kWh)
+    "METER.APProductionKWH",  # lifetime exported energy register (kWh)
+])
+
 # Metric -> dict-key. Each metric is one of <name>:<TD|MTD|YTD|BOL>
 TRACKED_METRICS = {
     "pv_today_kwh":                   "ActiveProduction:TD",
@@ -130,6 +139,28 @@ def discover_site(session: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         log.debug("asset/detail enrichment failed (%s); using asset/list only", e)
 
+    # Discover the whole-house grid meter (Res_Meter), a child device of the
+    # site. Optional -- absent on sites without a monitored meter.
+    meter_id = meter_name = None
+    try:
+        mj = call(session, API_LIST, {
+            "pageSize": 50, "pageNo": 1,
+            "mdmIds": site_id_short,
+            "mdmTypes": "Res_Meter",
+            "view": "DeviceMgtList",
+        })
+        mdata = mj.get("data")
+        meters = mdata if isinstance(mdata, list) else (
+            mdata.get("items") if isinstance(mdata, dict) and isinstance(mdata.get("items"), list)
+            else [v for v in (mdata or {}).values() if isinstance(v, dict)]
+        )
+        if meters:
+            m0 = meters[0]
+            meter_id = m0.get("mdmId") or m0.get("id")
+            meter_name = m0.get("name") or (m0.get("attributes", {}) or {}).get("name")
+    except Exception as e:  # noqa: BLE001
+        log.debug("meter discovery failed (%s); no meter entities", e)
+
     return {
         **session,
         "siteId_short": site_id_short,
@@ -139,6 +170,8 @@ def discover_site(session: dict) -> dict:
         "capacity_kw":  capacity,
         "operative_date": operative_date,   # commissioning date, if the portal has it
         "site_timezone":  site_timezone,
+        "meter_id":     meter_id,
+        "meter_name":   meter_name,
         "_site_raw":    first,  # kept for diagnostics; not used downstream
     }
 
@@ -184,4 +217,34 @@ def snapshot_site(session: dict) -> dict[str, Any]:
         "capacity_kw": attrs.get("capacity") or session.get("capacity_kw"),
         **{k: p(v) for k, v in TRACKED_POINTS.items()},
         **{k: m(v) for k, v in TRACKED_METRICS.items()},
+    }
+
+
+def snapshot_meter(session: dict) -> dict[str, Any]:
+    """Read the whole-house grid meter's live power + lifetime registers.
+
+    Returns {} if the site has no discovered meter. Uses the same asset/detail
+    endpoint as the site snapshot, addressed to the Res_Meter device id.
+    """
+    meter_id = session.get("meter_id")
+    if not meter_id:
+        return {}
+
+    detail = call(session, API_DETAIL, {
+        "mdmIds": meter_id,
+        "measurementPoints": METER_POINTS,
+    })
+    node = (detail.get("data") or {}).get(meter_id, {}) or {}
+    points = node.get("measurementPoints", {}) or {}
+
+    def pt(key: str):
+        v = points.get(key)
+        return v.get("value") if isinstance(v, dict) else None
+
+    return {
+        "meter_id":              meter_id,
+        "meter_name":            session.get("meter_name"),
+        "meter_power_kw":        pt("METER.ActivePW"),
+        "meter_grid_import_kwh": pt("METER.APConsumedKWH"),
+        "meter_grid_export_kwh": pt("METER.APProductionKWH"),
     }

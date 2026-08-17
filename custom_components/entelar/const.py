@@ -38,6 +38,15 @@ ATTR_BATTERY_DISCHARGED_MTD = "battery_discharged_mtd_kwh_calc"
 # Manufacturer / model metadata for the device_info block
 MANUFACTURER = "Univers"
 MODEL = "Univers EMS"
+MODEL_METER = "Electricity Meter (GRID)"
+
+# Meter (Res_Meter) -- the whole-house revenue grid meter, distinct from the
+# inverter/site figures. Its lifetime registers are true odometer totals
+# (ever-increasing), ideal for HA's Energy Dashboard and reconciling with the
+# electricity retailer's billed usage.
+ATTR_METER_POWER_KW = "meter_power_kw"        # METER.ActivePW (signed, -=import)
+ATTR_METER_IMPORT_KWH = "meter_grid_import_kwh"  # METER.APConsumedKWH (Imported-Total)
+ATTR_METER_EXPORT_KWH = "meter_grid_export_kwh"  # METER.APProductionKWH (Exported-Total)
 
 # How often to refetch daily history (seconds). Daily aggregates roll over
 # at midnight on the Univers side, so a once-per-hour refresh is plenty.

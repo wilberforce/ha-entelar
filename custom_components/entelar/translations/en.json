@@ -46,7 +46,10 @@
       "battery_charged_mtd": { "name": "Battery Charged MTD" },
       "battery_charged_lifetime": { "name": "Battery Charged Lifetime" },
       "battery_discharged_mtd": { "name": "Battery Discharged MTD" },
-      "battery_discharged_lifetime": { "name": "Battery Discharged Lifetime" }
+      "battery_discharged_lifetime": { "name": "Battery Discharged Lifetime" },
+      "meter_power": { "name": "Meter Power" },
+      "meter_grid_import": { "name": "Grid Import" },
+      "meter_grid_export": { "name": "Grid Export" }
     }
   },
   "services": {

@@ -42,7 +42,7 @@ from .daily_history import fetch_daily_history
 from .errors import EntelarError, EntelarLoginError
 from .hourly_history import fetch_hourly_history
 from .login import login, is_expired
-from .snapshot import discover_site, snapshot_site
+from .snapshot import discover_site, snapshot_meter, snapshot_site
 from .statistics_manager import push_external_statistics
 
 _LOGGER = logging.getLogger(__name__)
@@ -328,6 +328,13 @@ class EntelarCoordinator(DataUpdateCoordinator):
 
             # --- Live snapshot (also carries the true lifetime BOL totals) ---
             snap = await self.hass.async_add_executor_job(snapshot_site, session)
+
+            # --- Whole-house grid meter (optional device) ---
+            try:
+                meter = await self.hass.async_add_executor_job(snapshot_meter, session)
+                snap.update(meter)
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.warning("Meter snapshot failed: %s", e)
 
             # --- Push combined external statistics ---
             # Idempotent; safe to call every tick. Anchored to the snapshot's
