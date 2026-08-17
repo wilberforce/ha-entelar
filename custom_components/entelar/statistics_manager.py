@@ -60,6 +60,14 @@ EXTERNAL_STATS = [
 # and by any future clear-and-resync helper.
 EXTERNAL_STATISTIC_IDS = [stat_id for _, stat_id, _ in EXTERNAL_STATS]
 
+# Whole-house grid meter (Res_Meter) external statistics. (meter_daily field,
+# statistic_id, name). Anchored to the meter's true lifetime registers.
+METER_STATS = [
+    ("import", f"{SOURCE}:meter_grid_import", "Entelar Meter Grid Import"),
+    ("export", f"{SOURCE}:meter_grid_export", "Entelar Meter Grid Export"),
+]
+METER_STATISTIC_IDS = [stat_id for _, stat_id, _ in METER_STATS]
+
 # Only anchor to the portal's lifetime (BOL) figure when it differs from our
 # summed window by more than this, to avoid churn from rounding/interpolation.
 _BOL_ANCHOR_EPSILON = 0.5  # kWh
@@ -144,6 +152,45 @@ def _daily_only(daily: dict[str, float]) -> list[dict]:
             "state": round(cumulative, 3),
         })
     return out
+
+
+def push_meter_statistics(
+    hass: HomeAssistant,
+    meter_daily: dict[str, dict[str, float]],
+    lifetime_totals: dict[str, float] | None = None,
+) -> int:
+    """Push the whole-house grid meter's daily import/export as external stats.
+
+    `meter_daily` is {'import': {date: kwh}, 'export': {date: kwh}} (daily
+    totals). `lifetime_totals` maps 'import'/'export' to the meter's true
+    lifetime register (kWh), used to anchor each series so the tail is correct.
+    Idempotent per timestamp. Returns the number of metrics pushed.
+    """
+    lifetime_totals = lifetime_totals or {}
+    count = 0
+    for field, stat_id, name in METER_STATS:
+        daily = meter_daily.get(field) or {}
+        if not daily:
+            continue
+        stats = _daily_only(daily)
+        if not stats:
+            continue
+        _anchor_to_lifetime(stats, stat_id, lifetime_totals.get(field))
+        metadata = {
+            "statistic_id":        stat_id,
+            "source":              SOURCE,
+            "name":                name,
+            "unit_of_measurement": "kWh",
+            "has_sum":             True,
+            **_MEAN_META,
+        }
+        async_add_external_statistics(hass, metadata, stats)
+        count += 1
+        _LOGGER.debug(
+            "Pushed %d meter entries for %s (final %.2f kWh)",
+            len(stats), stat_id, stats[-1]["sum"],
+        )
+    return count
 
 
 def _anchor_to_lifetime(stats: list[dict], stat_id: str, bol: float | None) -> None:

@@ -28,6 +28,8 @@ from .const import (
     CONF_HISTORY_START,
     DAILY_HISTORY_REFETCH_SECONDS,
     DEFAULT_HISTORY_DAYS,
+    DEFAULT_METER_HISTORY_DAYS,
+    METER_BACKFILL_MAX_DAYS,
     HOURLY_30D_REFETCH_SECONDS,
     HOURLY_3D_REFETCH_SECONDS,
     HOURLY_WINDOW_DAYS,
@@ -42,8 +44,9 @@ from .daily_history import fetch_daily_history
 from .errors import EntelarError, EntelarLoginError
 from .hourly_history import fetch_hourly_history
 from .login import login, is_expired
+from .meter_history import fetch_meter_daily
 from .snapshot import discover_site, snapshot_meter, snapshot_site
-from .statistics_manager import push_external_statistics
+from .statistics_manager import push_external_statistics, push_meter_statistics
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +76,21 @@ def _lifetime_totals(snap: dict) -> dict[str, float]:
     """Extract {field: lifetime_kwh} from a snapshot, skipping absent values."""
     out: dict[str, float] = {}
     for field, key in _LIFETIME_KEY_BY_FIELD.items():
+        val = snap.get(key)
+        if val is None:
+            continue
+        try:
+            out[field] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _meter_lifetime(snap: dict) -> dict[str, float]:
+    """Extract the meter's true lifetime registers {import, export} from snap."""
+    out: dict[str, float] = {}
+    for field, key in (("import", "meter_grid_import_kwh"),
+                        ("export", "meter_grid_export_kwh")):
         val = snap.get(key)
         if val is None:
             continue
@@ -119,6 +137,9 @@ class EntelarCoordinator(DataUpdateCoordinator):
         self._hourly_history: dict[str, dict[str, float]] = {}
         self._hourly_30d_fetched_at: float = 0.0
         self._hourly_3d_fetched_at: float = 0.0
+        # Meter daily history cache {'import': {date: kwh}, 'export': {...}}.
+        self._meter_daily: dict[str, dict[str, float]] = {"import": {}, "export": {}}
+        self._meter_seeded: bool = False
 
     @property
     def daily_history(self) -> dict[str, dict[str, float]]:
@@ -254,6 +275,31 @@ class EntelarCoordinator(DataUpdateCoordinator):
                 sum(v for d, v in daily.items() if d >= month_start_iso), 3
             )
 
+    async def _refresh_meter(self, session: dict, days_back: int) -> None:
+        """Fetch `days_back` days of meter daily history into the cache."""
+        if not session.get("meter_id"):
+            return
+        end = date.today()
+        start = end - timedelta(days=days_back)
+        try:
+            hist = await self.hass.async_add_executor_job(
+                fetch_meter_daily, session, start, end,
+            )
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Meter history fetch failed: %s", e)
+            return
+        for field in ("import", "export"):
+            self._meter_daily.setdefault(field, {}).update(hist.get(field, {}))
+
+    def _push_meter(self, snap: dict) -> None:
+        """Push the cached meter daily history as external statistics."""
+        if not (self._meter_daily.get("import") or self._meter_daily.get("export")):
+            return
+        try:
+            push_meter_statistics(self.hass, self._meter_daily, _meter_lifetime(snap))
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Failed to push meter statistics: %s", e)
+
     async def async_backfill(self, days: int) -> None:
         """On-demand re-fetch of `days` of history + full statistics rewrite.
 
@@ -282,10 +328,18 @@ class EntelarCoordinator(DataUpdateCoordinator):
         self._hourly_30d_fetched_at = time.time()
         self._hourly_3d_fetched_at = time.time()
         snap = await self.hass.async_add_executor_job(snapshot_site, session)
+        try:
+            snap.update(await self.hass.async_add_executor_job(snapshot_meter, session))
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("Meter snapshot (backfill) failed: %s", e)
         push_external_statistics(
             self.hass, self._daily_history, self._hourly_history,
             _lifetime_totals(snap),
         )
+        # Meter history too (one request per day, so bounded).
+        await self._refresh_meter(session, min(days, METER_BACKFILL_MAX_DAYS))
+        self._meter_seeded = True
+        self._push_meter(snap)
         await self.async_request_refresh()
 
     async def _async_update_data(self) -> dict:
@@ -349,6 +403,16 @@ class EntelarCoordinator(DataUpdateCoordinator):
                     )
                 except Exception as e:  # noqa: BLE001
                     _LOGGER.warning("Failed to push external statistics: %s", e)
+
+            # --- Meter external statistics (whole-house import/export) ---
+            # Seed a week on the first cycle, then keep the recent days fresh.
+            if session.get("meter_id"):
+                if not self._meter_seeded:
+                    await self._refresh_meter(session, DEFAULT_METER_HISTORY_DAYS)
+                    self._meter_seeded = True
+                else:
+                    await self._refresh_meter(session, 1)
+                self._push_meter(snap)
 
             self._compute_cumulative(snap)
             return snap

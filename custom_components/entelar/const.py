@@ -48,6 +48,12 @@ ATTR_METER_POWER_KW = "meter_power_kw"        # METER.ActivePW (signed, -=import
 ATTR_METER_IMPORT_KWH = "meter_grid_import_kwh"  # METER.APConsumedKWH (Imported-Total)
 ATTR_METER_EXPORT_KWH = "meter_grid_export_kwh"  # METER.APProductionKWH (Exported-Total)
 
+# Meter history: one API round-trip per day, so the window is kept modest.
+# Seeded on first setup; the backfill_statistics service can extend it up to
+# the cap. (Start at a week; raise DEFAULT_METER_HISTORY_DAYS later if wanted.)
+DEFAULT_METER_HISTORY_DAYS = 7
+METER_BACKFILL_MAX_DAYS = 90
+
 # How often to refetch daily history (seconds). Daily aggregates roll over
 # at midnight on the Univers side, so a once-per-hour refresh is plenty.
 # This also keeps the MTD sensor entities reasonably fresh.
