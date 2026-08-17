@@ -17,6 +17,7 @@ import logging
 import time
 from datetime import date, timedelta
 
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, HomeAssistantError
 from homeassistant.helpers.update_coordinator import (
@@ -24,6 +25,7 @@ from homeassistant.helpers.update_coordinator import (
 )
 
 from .const import (
+    CONF_HISTORY_START,
     DAILY_HISTORY_REFETCH_SECONDS,
     DEFAULT_HISTORY_DAYS,
     HOURLY_30D_REFETCH_SECONDS,
@@ -64,9 +66,10 @@ class EntelarCoordinator(DataUpdateCoordinator):
         self,
         hass: HomeAssistant,
         *,
+        config_entry: ConfigEntry,
         account: str,
         password: str,
-        history_start: date,
+        history_start: date | None,
         api_base: str = DEFAULT_API_BASE,
         update_interval_seconds: int = DEFAULT_UPDATE_INTERVAL_SECONDS,
     ) -> None:
@@ -76,10 +79,12 @@ class EntelarCoordinator(DataUpdateCoordinator):
             name="entelar",
             update_interval=timedelta(seconds=update_interval_seconds),
         )
+        self._entry = config_entry
         self._account = account
         self._password = password
         self._api_base = api_base
-        # Stable start bound for daily-history fetches (resolved once at setup).
+        # Stable start bound for daily-history fetches. If None, it's resolved
+        # once from the portal's operativeDate on first login and persisted.
         self._history_start = history_start
         self._session: dict | None = None
         # Daily history cache: {field: {YYYY-MM-DD: kwh}} from commissioning.
@@ -107,8 +112,36 @@ class EntelarCoordinator(DataUpdateCoordinator):
         except EntelarLoginError as e:
             raise ConfigEntryAuthFailed(f"Entelar login failed: {e}") from e
         session = await self.hass.async_add_executor_job(discover_site, session)
+        self._resolve_history_start(session)
         self._session = session
         return session
+
+    def _resolve_history_start(self, session: dict) -> None:
+        """Pin the daily-history start date once and persist it.
+
+        Prefers the portal's `operativeDate` (site commissioning), falling back
+        to `today - DEFAULT_HISTORY_DAYS`. Either way it's floored at the ~2yr
+        API retention limit, since the portal won't serve older data anyway.
+        """
+        if self._history_start is not None:
+            return
+        default = date.today() - timedelta(days=DEFAULT_HISTORY_DAYS)
+        operative = session.get("operative_date")
+        anchor = default
+        if operative:
+            try:
+                anchor = max(date.fromisoformat(operative), default)
+            except ValueError:
+                _LOGGER.debug("Unparseable operativeDate %r; using default", operative)
+        self._history_start = anchor
+        self.hass.config_entries.async_update_entry(
+            self._entry,
+            data={**self._entry.data, CONF_HISTORY_START: anchor.isoformat()},
+        )
+        _LOGGER.info(
+            "Entelar history anchor set to %s (portal operativeDate=%s)",
+            anchor, operative,
+        )
 
     async def _refresh_daily_history(self, session: dict) -> None:
         """Fetch daily aggregates from commissioning to today."""

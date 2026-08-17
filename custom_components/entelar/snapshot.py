@@ -109,13 +109,36 @@ def discover_site(session: dict) -> dict:
         or first.get("mdmUuid")
         or site_id_short  # last resort -- often still works for hossain-bff calls
     )
+    # Enrich from asset/detail. On some tenants asset/list is sparse (no name,
+    # capacity, or commissioning date); the detail view carries all three.
+    operative_date = None
+    site_name = first.get("name") or first.get("siteName")
+    capacity = first.get("capacity")
+    site_timezone = None
+    try:
+        detail = call(session, API_DETAIL, {
+            "mdmIds": site_id_short,
+            "view": "WebSiteDetailMonitorOverview",
+        })
+        dattrs = ((detail.get("data") or {}).get(site_id_short) or {}).get(
+            "attributes", {}
+        )
+        operative_date = dattrs.get("operativeDate")  # 'YYYY-MM-DD' commissioning
+        site_name = dattrs.get("name") or site_name
+        capacity = dattrs.get("capacity") or capacity
+        site_timezone = dattrs.get("timezone")
+    except Exception as e:  # noqa: BLE001
+        log.debug("asset/detail enrichment failed (%s); using asset/list only", e)
+
     return {
         **session,
         "siteId_short": site_id_short,
         "siteId_uuid":  site_id_uuid,
         "appId":        site_id_uuid,   # dt-service routing header
-        "site_name":    first.get("name") or first.get("siteName"),
-        "capacity_kw":  first.get("capacity"),
+        "site_name":    site_name,
+        "capacity_kw":  capacity,
+        "operative_date": operative_date,   # commissioning date, if the portal has it
+        "site_timezone":  site_timezone,
         "_site_raw":    first,  # kept for diagnostics; not used downstream
     }
 

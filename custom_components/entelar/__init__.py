@@ -7,14 +7,13 @@ to the sensor platform. Also registers the `backfill_statistics` service.
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.util import dt as dt_util
 
 from .const import (
     DOMAIN,
@@ -48,24 +47,6 @@ async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> Non
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-def _resolve_history_start(hass: HomeAssistant, entry: ConfigEntry) -> date:
-    """Return the history-start anchor, writing a default on first setup.
-
-    Storing the anchor once (rather than a rolling `today - N`) keeps the
-    cumulative external statistics stable: the fetch window doesn't slide
-    forward every day, so lifetime totals don't drift.
-    """
-    stored = entry.data.get(CONF_HISTORY_START)
-    if stored:
-        return date.fromisoformat(stored)
-    default = dt_util.now().date() - timedelta(days=DEFAULT_HISTORY_DAYS)
-    hass.config_entries.async_update_entry(
-        entry, data={**entry.data, CONF_HISTORY_START: default.isoformat()}
-    )
-    _LOGGER.info("Entelar: resolved history start anchor to %s", default)
-    return default
-
-
 def _register_services(hass: HomeAssistant) -> None:
     """Register integration-wide services once."""
     if hass.services.has_service(DOMAIN, SERVICE_BACKFILL):
@@ -88,11 +69,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         CONF_UPDATE_INTERVAL,
         entry.data.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL_SECONDS),
     )
+    # A stored anchor is reused as-is; otherwise the coordinator resolves it from
+    # the portal's operativeDate on first login and persists it (see below).
+    stored = entry.data.get(CONF_HISTORY_START)
+    history_start = date.fromisoformat(stored) if stored else None
+
     coordinator = EntelarCoordinator(
         hass,
+        config_entry=entry,
         account=entry.data[CONF_ACCOUNT],
         password=entry.data[CONF_PASSWORD],
-        history_start=_resolve_history_start(hass, entry),
+        history_start=history_start,
         api_base=entry.data.get(CONF_API_BASE, DEFAULT_API_BASE),
         update_interval_seconds=update_interval,
     )
