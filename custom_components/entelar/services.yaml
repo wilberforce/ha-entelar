@@ -1,0 +1,22 @@
+backfill_statistics:
+  name: Backfill historical statistics
+  description: >
+    Re-fetch daily history from the Univers portal and rewrite the long-term
+    statistics for every configured Entelar site. Use this to fill gaps or
+    right after adding the integration. Safe to run repeatedly (idempotent).
+  fields:
+    days_to_fetch:
+      name: Days to fetch
+      description: >
+        How many past days of data to retrieve. The portal only retains about
+        two years, so values above ~730 simply return everything available.
+      required: false
+      example: 730
+      default: 730
+      selector:
+        number:
+          min: 1
+          max: 730
+          step: 1
+          mode: box
+          unit_of_measurement: days

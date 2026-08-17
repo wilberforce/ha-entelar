@@ -1,0 +1,64 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Entelar",
+        "description": "Enter your Entelar / Univers EMS portal credentials. Same account and password you use on https://app.entelarenergy-emsportal.com/.",
+        "data": {
+          "account": "Account (email or username)",
+          "password": "Password",
+          "api_base": "API base URL (leave default unless instructed)",
+          "update_interval": "Update interval in seconds (30-3600)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Login failed. Check the account and password.",
+      "unknown": "Unexpected error -- see HA logs for details."
+    },
+    "abort": {
+      "already_configured": "This Entelar account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "update_interval": "Update interval in seconds (30-3600)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_soc": { "name": "Battery SoC" },
+      "pv_power": { "name": "PV Power" },
+      "load_power": { "name": "Load Power" },
+      "grid_power": { "name": "Grid Power" },
+      "battery_power": { "name": "Battery Power" },
+      "pv_today_kwh": { "name": "PV Production Today" },
+      "pv_month_kwh": { "name": "PV Production MTD" },
+      "pv_lifetime_kwh": { "name": "PV Production Lifetime" },
+      "grid_import_mtd": { "name": "Grid Import MTD" },
+      "grid_import_lifetime": { "name": "Grid Import Lifetime" },
+      "grid_export_mtd": { "name": "Grid Export MTD" },
+      "grid_export_lifetime": { "name": "Grid Export Lifetime" },
+      "battery_charged_mtd": { "name": "Battery Charged MTD" },
+      "battery_charged_lifetime": { "name": "Battery Charged Lifetime" },
+      "battery_discharged_mtd": { "name": "Battery Discharged MTD" },
+      "battery_discharged_lifetime": { "name": "Battery Discharged Lifetime" }
+    }
+  },
+  "services": {
+    "backfill_statistics": {
+      "name": "Backfill historical statistics",
+      "description": "Re-fetch daily history from the Univers portal and rewrite the long-term statistics. Use to fill gaps or after adding the integration.",
+      "fields": {
+        "days_to_fetch": {
+          "name": "Days to fetch",
+          "description": "How many past days to retrieve (max ~730; the portal only retains about 2 years)."
+        }
+      }
+    }
+  }
+}
