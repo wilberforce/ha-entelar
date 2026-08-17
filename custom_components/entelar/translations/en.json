@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Connect to Entelar",
-        "description": "Enter your Entelar / Univers EMS portal credentials. Same account and password you use on https://app.entelarenergy-emsportal.com/.",
+        "description": "Enter your Entelar / Univers EMS portal credentials — the same account and password you use to sign in to the EMS portal.",
         "data": {
           "account": "Account (email or username)",
           "password": "Password",

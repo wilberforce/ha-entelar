@@ -3,6 +3,7 @@
   "name": "Entelar Energy (Univers EMS)",
   "codeowners": ["@wilberforce"],
   "config_flow": true,
+  "dependencies": ["recorder"],
   "documentation": "https://github.com/wilberforce/ha-entelar",
   "integration_type": "hub",
   "iot_class": "cloud_polling",
