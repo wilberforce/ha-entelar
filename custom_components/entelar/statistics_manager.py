@@ -34,6 +34,16 @@ from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
+# HA is migrating statistics metadata from `has_mean` to `mean_type`. Prefer the
+# new key when this HA version supports it, and fall back to `has_mean` on older
+# versions. Our metrics are pure cumulative sums, so there is no mean component.
+try:
+    from homeassistant.components.recorder.models import StatisticMeanType
+
+    _MEAN_META: dict = {"mean_type": StatisticMeanType.NONE}
+except ImportError:  # pragma: no cover -- older HA without mean_type
+    _MEAN_META = {"has_mean": False}
+
 # The source prefix that must match the first segment of every statistic_id.
 SOURCE = "entelar"
 
@@ -189,8 +199,8 @@ def push_external_statistics(
             "source":              SOURCE,
             "name":                name,
             "unit_of_measurement": "kWh",
-            "has_mean":            False,
             "has_sum":             True,
+            **_MEAN_META,
         }
         async_add_external_statistics(hass, metadata, stats)
         count += 1
