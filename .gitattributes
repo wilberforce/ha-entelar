@@ -1,0 +1,2 @@
+# Normalise line endings to LF across platforms (Python / HA convention)
+* text=auto eol=lf
