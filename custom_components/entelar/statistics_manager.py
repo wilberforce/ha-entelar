@@ -50,6 +50,10 @@ EXTERNAL_STATS = [
 # and by any future clear-and-resync helper.
 EXTERNAL_STATISTIC_IDS = [stat_id for _, stat_id, _ in EXTERNAL_STATS]
 
+# Only anchor to the portal's lifetime (BOL) figure when it differs from our
+# summed window by more than this, to avoid churn from rounding/interpolation.
+_BOL_ANCHOR_EPSILON = 0.5  # kWh
+
 
 def _midnight(date_str: str) -> datetime:
     """'2026-06-16' -> local midnight datetime (HA's configured timezone)."""
@@ -132,13 +136,44 @@ def _daily_only(daily: dict[str, float]) -> list[dict]:
     return out
 
 
+def _anchor_to_lifetime(stats: list[dict], stat_id: str, bol: float | None) -> None:
+    """Shift `stats` in place so the final cumulative equals `bol` (BOL).
+
+    No-op when bol is absent, when the gap is within the epsilon (rounding), or
+    when our window sum already exceeds bol (which would mean over-counting --
+    left alone and logged rather than silently subtracting).
+    """
+    if bol is None or not stats:
+        return
+    offset = bol - stats[-1]["sum"]
+    if offset > _BOL_ANCHOR_EPSILON:
+        for row in stats:
+            row["sum"] = round(row["sum"] + offset, 3)
+            row["state"] = row["sum"]
+        _LOGGER.debug("Anchored %s to BOL (+%.3f kWh)", stat_id, offset)
+    elif offset < -_BOL_ANCHOR_EPSILON:
+        _LOGGER.warning(
+            "Not anchoring %s: window sum %.1f exceeds portal lifetime %.1f",
+            stat_id, stats[-1]["sum"], bol,
+        )
+
+
 def push_external_statistics(
     hass: HomeAssistant,
     daily_history: dict[str, dict[str, float]],
     hourly_history: dict[str, dict[str, float]] | None = None,
+    lifetime_totals: dict[str, float] | None = None,
 ) -> int:
-    """Re-push the full timeseries for each lifetime metric. Returns count."""
+    """Re-push the full timeseries for each lifetime metric. Returns count.
+
+    `lifetime_totals` maps a daily/hourly field name to the portal's true
+    lifetime (BOL) kWh. When supplied, the whole cumulative series is offset so
+    its final point equals BOL -- correcting the absolute lifetime for sites
+    older than the API's ~2yr daily-history window. Period deltas (the Energy
+    Dashboard bars) are unaffected by a constant offset.
+    """
     hourly_history = hourly_history or {}
+    lifetime_totals = lifetime_totals or {}
     count = 0
     for field, stat_id, name in EXTERNAL_STATS:
         daily = daily_history.get(field) or {}
@@ -148,6 +183,7 @@ def push_external_statistics(
         stats = _build_stats(daily, hourly)
         if not stats:
             continue
+        _anchor_to_lifetime(stats, stat_id, lifetime_totals.get(field))
         metadata = {
             "statistic_id":        stat_id,
             "source":              SOURCE,

@@ -67,11 +67,11 @@ Add these statistics under **Settings → Dashboards → Energy**:
 
 ## Known limitations
 
-- **~2 years of history.** The portal's data service retains roughly two years
-  of daily aggregates and about 30 days of 5-minute (→ hourly) data. For sites
-  older than two years the lifetime totals reflect the available window rather
-  than true beginning-of-life. (The portal *does* expose true lifetime figures;
-  anchoring the statistics to them is a planned enhancement.)
+- **~2 years of detailed history.** The portal's data service retains roughly
+  two years of daily aggregates and about 30 days of 5-minute (→ hourly) data.
+  The **absolute lifetime totals stay correct** even for older sites: the
+  statistics are anchored to the portal's own lifetime (BOL) figures, so only
+  the *shape* of history before the two-year window is missing, not the totals.
 - **Cloud polling.** Requires the portal to be reachable; there's no local API.
 - Reverse-engineered endpoints — a portal update could break a call until the
   integration is updated to match.

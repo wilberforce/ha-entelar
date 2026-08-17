@@ -58,6 +58,30 @@ _CUMULATIVE_FIELD_MAP = [
     ("DischargeProduction", ATTR_BATTERY_DISCHARGED_MTD),
 ]
 
+# Map daily/hourly statistics field -> the snapshot key holding the portal's
+# true lifetime (BOL) total, used to anchor the external statistics.
+_LIFETIME_KEY_BY_FIELD = {
+    "ActiveProduction":    "pv_lifetime_kwh",
+    "OffGridEnergy":       "grid_import_lifetime_kwh",
+    "OnGridEnergy":        "grid_export_lifetime_kwh",
+    "ChargeProduction":    "battery_charged_lifetime_kwh",
+    "DischargeProduction": "battery_discharged_lifetime_kwh",
+}
+
+
+def _lifetime_totals(snap: dict) -> dict[str, float]:
+    """Extract {field: lifetime_kwh} from a snapshot, skipping absent values."""
+    out: dict[str, float] = {}
+    for field, key in _LIFETIME_KEY_BY_FIELD.items():
+        val = snap.get(key)
+        if val is None:
+            continue
+        try:
+            out[field] = float(val)
+        except (TypeError, ValueError):
+            continue
+    return out
+
 
 class EntelarCoordinator(DataUpdateCoordinator):
     """Polls Entelar's site overview and exposes the parsed dict."""
@@ -257,8 +281,10 @@ class EntelarCoordinator(DataUpdateCoordinator):
         )
         self._hourly_30d_fetched_at = time.time()
         self._hourly_3d_fetched_at = time.time()
+        snap = await self.hass.async_add_executor_job(snapshot_site, session)
         push_external_statistics(
             self.hass, self._daily_history, self._hourly_history,
+            _lifetime_totals(snap),
         )
         await self.async_request_refresh()
 
@@ -300,20 +326,23 @@ class EntelarCoordinator(DataUpdateCoordinator):
                 # Every tick: refresh today's bars only
                 await self._refresh_hourly_window(session, days_back=0)
 
+            # --- Live snapshot (also carries the true lifetime BOL totals) ---
+            snap = await self.hass.async_add_executor_job(snapshot_site, session)
+
             # --- Push combined external statistics ---
-            # Idempotent; safe to call every tick.
+            # Idempotent; safe to call every tick. Anchored to the snapshot's
+            # lifetime totals so the absolute lifetime stays correct past ~2yr.
             if self._daily_history or self._hourly_history:
                 try:
                     push_external_statistics(
                         self.hass,
                         self._daily_history,
                         self._hourly_history,
+                        _lifetime_totals(snap),
                     )
                 except Exception as e:  # noqa: BLE001
                     _LOGGER.warning("Failed to push external statistics: %s", e)
 
-            # --- Live snapshot for live + MTD sensor entities ---
-            snap = await self.hass.async_add_executor_job(snapshot_site, session)
             self._compute_cumulative(snap)
             return snap
         except ConfigEntryAuthFailed:
