@@ -23,8 +23,16 @@ day one.
 - **Long-term statistics** under the `entelar:` source (PV, grid import/export,
   battery charged/discharged lifetime) — ready to drop into the Energy
   Dashboard, backfilled from portal history.
+- **Grid meter device:** live meter power and lifetime import/export registers,
+  when the site exposes a `Res_Meter`.
 - **`entelar.backfill_statistics` service** to (re)import history on demand.
 - Config flow + options flow (adjustable polling interval); no YAML required.
+
+> **Scope note:** the grid/meter figures are measured at the **inverter's
+> grid connection** (the solar circuit). On multi-phase installs where solar
+> only feeds part of the home, they can be well below whole-house consumption —
+> that whole-house figure lives only at the utility revenue meter (e.g. your
+> retailer's data), not in this portal.
 
 ## Installation (HACS custom repository)
 

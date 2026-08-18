@@ -146,9 +146,11 @@ SENSOR_DESCRIPTIONS: tuple[SensorEntityDescription, ...] = (
 )
 
 
-# Whole-house grid meter (Res_Meter) -- a separate device. The *_kwh registers
-# are true lifetime odometer totals, so TOTAL_INCREASING lets HA derive
-# long-term statistics automatically (ideal for the Energy Dashboard).
+# Grid meter (Res_Meter) -- the inverter's grid-connection meter, a separate
+# device. This is the solar circuit's grid exchange, NOT whole-house (the
+# house's other circuits/phases are only seen by the utility revenue meter).
+# The *_kwh registers are true lifetime odometer totals, so TOTAL_INCREASING
+# lets HA derive long-term statistics for them automatically.
 METER_SENSORS: tuple[EntelarSensorEntityDescription, ...] = (
     EntelarSensorEntityDescription(
         key=ATTR_METER_POWER_KW,

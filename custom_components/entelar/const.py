@@ -40,19 +40,13 @@ MANUFACTURER = "Univers"
 MODEL = "Univers EMS"
 MODEL_METER = "Electricity Meter (GRID)"
 
-# Meter (Res_Meter) -- the whole-house revenue grid meter, distinct from the
-# inverter/site figures. Its lifetime registers are true odometer totals
-# (ever-increasing), ideal for HA's Energy Dashboard and reconciling with the
-# electricity retailer's billed usage.
+# Meter (Res_Meter) -- the inverter's grid-connection meter (the solar
+# circuit's grid exchange), NOT the whole-house revenue meter. Its lifetime
+# registers are true odometer totals (ever-increasing). Exposed as live
+# sensors; note the figures reflect only the grid seen by the inverter.
 ATTR_METER_POWER_KW = "meter_power_kw"        # METER.ActivePW (signed, -=import)
 ATTR_METER_IMPORT_KWH = "meter_grid_import_kwh"  # METER.APConsumedKWH (Imported-Total)
 ATTR_METER_EXPORT_KWH = "meter_grid_export_kwh"  # METER.APProductionKWH (Exported-Total)
-
-# Meter history: one API round-trip per day, so the window is kept modest.
-# Seeded on first setup; the backfill_statistics service can extend it up to
-# the cap. (Start at a week; raise DEFAULT_METER_HISTORY_DAYS later if wanted.)
-DEFAULT_METER_HISTORY_DAYS = 7
-METER_BACKFILL_MAX_DAYS = 90
 
 # How often to refetch daily history (seconds). Daily aggregates roll over
 # at midnight on the Univers side, so a once-per-hour refresh is plenty.
